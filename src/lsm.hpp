@@ -81,12 +81,66 @@ struct LSMResult {
     double std_error = 0.0;
 };
 
+// Run the LSM backward induction and return the per-path present value (the
+// realized discounted cashflow of each path under the learned exercise policy).
+// This is the raw pathwise estimator; the mean is the Bermudan price. Kept
+// separate so variance-reduction schemes can post-process the pathwise values.
+std::vector<double> lsm_pathwise_pv(const Paths& paths,
+                                    const Payoff& payoff,
+                                    const MarketParams& m,
+                                    const Basis& basis);
+
 // Price a Bermudan option by least-squares Monte Carlo on already-generated
-// paths. Exercise dates are the M steps t_1..t_M of `paths` (t_M = maturity).
-// Regression uses only in-the-money paths and is solved via householderQr.
+// paths (plain estimator, no variance reduction). Exercise dates are the M
+// steps t_1..t_M of `paths` (t_M = maturity). Regression uses only in-the-money
+// paths and is solved via householderQr.
 LSMResult longstaff_schwartz(const Paths& paths,
                              const Payoff& payoff,
                              const MarketParams& m,
                              const Basis& basis);
+
+// ---------------------------------------------------------------------------
+// Variance-reduction estimator layer.
+// ---------------------------------------------------------------------------
+
+// Whether the pathwise values come in antithetic mirror pairs (rows 2p, 2p+1).
+// When On, the pair average is the independent sampling unit -- this is what
+// makes the reported standard error correct for antithetic sampling.
+enum class Antithetic { Off, On };
+
+struct Estimate {
+    double price = 0.0;
+    double std_error = 0.0;
+};
+
+// Turn per-path present values into a price + standard error.
+//
+//  - antithetic == On: consecutive rows are folded into pair averages before
+//    any statistics, so the standard error counts pairs (not paths) as the
+//    independent units.
+//  - control != nullptr: applies the control-variate correction
+//      Y* = Y - beta*(C - control_mean),   beta = Cov(Y,C)/Var(C)
+//    with beta estimated empirically. Unbiased for any beta (the correction
+//    has zero mean); the optimal beta minimizes variance.
+Estimate reduce(const std::vector<double>& pv,
+                Antithetic antithetic,
+                const std::vector<double>* control = nullptr,
+                double control_mean = 0.0);
+
+// Variance-reduction toggles for the convenience pricer / benchmark.
+struct VarianceReduction {
+    bool antithetic = false;  // use antithetic mirror-pair sampling
+    bool control    = false;  // use the European control variate
+};
+
+// End-to-end convenience: generate paths (plain or antithetic), run LSM, apply
+// the requested variance reduction, and return price + standard error. The
+// control variate uses the SAME European option (same payoff type/strike) whose
+// exact price is the Black-Scholes value -- highly correlated with the Bermudan.
+Estimate price_bermudan(const MarketParams& m,
+                        const MCConfig& cfg,
+                        const Payoff& payoff,
+                        const Basis& basis,
+                        VarianceReduction vr);
 
 }  // namespace pricer

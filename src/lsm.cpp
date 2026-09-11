@@ -5,12 +5,14 @@
 
 #include <Eigen/Dense>
 
+#include "blackscholes.hpp"
+
 namespace pricer {
 
-LSMResult longstaff_schwartz(const Paths& paths,
-                             const Payoff& payoff,
-                             const MarketParams& m,
-                             const Basis& basis) {
+std::vector<double> lsm_pathwise_pv(const Paths& paths,
+                                    const Payoff& payoff,
+                                    const MarketParams& m,
+                                    const Basis& basis) {
     const Eigen::Index N = paths.num_paths();
     const Eigen::Index M = paths.num_steps();
     const int          k = basis.size();
@@ -73,22 +75,110 @@ LSMResult longstaff_schwartz(const Paths& paths,
         }
     }
 
-    // Discount each path's realized cashflow to today and average.
-    double sum = 0.0, sumsq = 0.0;
+    // Discount each path's realized cashflow to today; return the pathwise PVs.
+    std::vector<double> pv(static_cast<std::size_t>(N));
     for (Eigen::Index i = 0; i < N; ++i) {
-        const double pv = cf_amount[static_cast<std::size_t>(i)] *
-                          std::pow(df, static_cast<double>(cf_step[static_cast<std::size_t>(i)]));
-        sum += pv;
-        sumsq += pv * pv;
+        pv[static_cast<std::size_t>(i)] =
+            cf_amount[static_cast<std::size_t>(i)] *
+            std::pow(df, static_cast<double>(cf_step[static_cast<std::size_t>(i)]));
     }
-    const double n = static_cast<double>(N);
-    const double mean = sum / n;
-    const double var = (sumsq / n - mean * mean) * n / (n - 1.0);  // unbiased
+    return pv;
+}
 
-    LSMResult res;
-    res.price = mean;
-    res.std_error = std::sqrt(var / n);
-    return res;
+LSMResult longstaff_schwartz(const Paths& paths,
+                             const Payoff& payoff,
+                             const MarketParams& m,
+                             const Basis& basis) {
+    const std::vector<double> pv = lsm_pathwise_pv(paths, payoff, m, basis);
+    const Estimate e = reduce(pv, Antithetic::Off);
+    return LSMResult{e.price, e.std_error};
+}
+
+// --- Variance-reduction estimator ------------------------------------------
+
+namespace {
+// Sample mean and unbiased-variance standard error of a vector of values.
+Estimate mean_and_se(const std::vector<double>& x) {
+    const double n = static_cast<double>(x.size());
+    double sum = 0.0;
+    for (double v : x) sum += v;
+    const double mean = sum / n;
+    double ss = 0.0;
+    for (double v : x) ss += (v - mean) * (v - mean);
+    const double var = ss / (n - 1.0);
+    return Estimate{mean, std::sqrt(var / n)};
+}
+}  // namespace
+
+Estimate reduce(const std::vector<double>& pv,
+                Antithetic antithetic,
+                const std::vector<double>* control,
+                double control_mean) {
+    // 1) Fold antithetic pairs into their averages: the pair is the
+    //    independent sampling unit, so statistics counts pairs, not paths.
+    std::vector<double> y;
+    std::vector<double> c;
+    if (antithetic == Antithetic::On) {
+        const std::size_t P = pv.size() / 2;
+        y.resize(P);
+        for (std::size_t p = 0; p < P; ++p) y[p] = 0.5 * (pv[2 * p] + pv[2 * p + 1]);
+        if (control) {
+            c.resize(P);
+            for (std::size_t p = 0; p < P; ++p)
+                c[p] = 0.5 * ((*control)[2 * p] + (*control)[2 * p + 1]);
+        }
+    } else {
+        y = pv;
+        if (control) c = *control;
+    }
+
+    // 2) No control variate: plain mean + SE of the (possibly folded) units.
+    if (!control) return mean_and_se(y);
+
+    // 3) Control variate: Y* = Y - beta*(C - E[C]), beta = Cov(Y,C)/Var(C).
+    const double n = static_cast<double>(y.size());
+    double ybar = 0.0, cbar = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) { ybar += y[i]; cbar += c[i]; }
+    ybar /= n; cbar /= n;
+
+    double cov = 0.0, varc = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        const double dy = y[i] - ybar, dc = c[i] - cbar;
+        cov += dy * dc;
+        varc += dc * dc;
+    }
+    const double beta = (varc > 0.0) ? cov / varc : 0.0;
+
+    std::vector<double> adjusted(y.size());
+    for (std::size_t i = 0; i < y.size(); ++i)
+        adjusted[i] = y[i] - beta * (c[i] - control_mean);
+    return mean_and_se(adjusted);
+}
+
+Estimate price_bermudan(const MarketParams& m,
+                        const MCConfig& cfg,
+                        const Payoff& payoff,
+                        const Basis& basis,
+                        VarianceReduction vr) {
+    const Paths paths = vr.antithetic ? generate_gbm_paths_antithetic(m, cfg)
+                                      : generate_gbm_paths(m, cfg);
+    const std::vector<double> pv = lsm_pathwise_pv(paths, payoff, m, basis);
+
+    if (!vr.control) {
+        return reduce(pv, vr.antithetic ? Antithetic::On : Antithetic::Off);
+    }
+
+    // European control variate: the same option exercised only at maturity.
+    // C_i = e^{-rT} * intrinsic(S_T_i); E[C] = Black-Scholes price (exact).
+    const double disc_T = std::exp(-m.r * m.T);
+    std::vector<double> control(pv.size());
+    for (std::size_t i = 0; i < pv.size(); ++i) {
+        control[i] = disc_T * payoff.intrinsic(paths.terminal()(static_cast<Eigen::Index>(i)));
+    }
+    const double control_mean = black_scholes_price(payoff, m);
+
+    return reduce(pv, vr.antithetic ? Antithetic::On : Antithetic::Off,
+                  &control, control_mean);
 }
 
 }  // namespace pricer

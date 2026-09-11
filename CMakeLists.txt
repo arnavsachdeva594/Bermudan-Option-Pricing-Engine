@@ -70,6 +70,7 @@ add_executable(unit_tests
     tests/test_gbm.cpp
     tests/test_binomial.cpp
     tests/test_lsm.cpp
+    tests/test_variance_reduction.cpp
 )
 target_link_libraries(unit_tests PRIVATE pricer Catch2::Catch2WithMain)
 catch_discover_tests(unit_tests)
