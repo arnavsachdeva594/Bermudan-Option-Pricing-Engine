@@ -40,7 +40,7 @@ set(PRICER_SOURCES
     src/blackscholes.cpp     # stage 2
     src/binomial.cpp         # stage 3
     src/lsm.cpp              # stage 4
-    # src/greeks.cpp         # stage 6
+    src/greeks.cpp           # stage 6
 )
 
 if(PRICER_SOURCES)
@@ -71,6 +71,7 @@ add_executable(unit_tests
     tests/test_binomial.cpp
     tests/test_lsm.cpp
     tests/test_variance_reduction.cpp
+    tests/test_greeks.cpp
 )
 target_link_libraries(unit_tests PRIVATE pricer Catch2::Catch2WithMain)
 catch_discover_tests(unit_tests)
