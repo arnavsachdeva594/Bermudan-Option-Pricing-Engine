@@ -40,8 +40,10 @@ CMakeLists.txt
 
 Fetched automatically by CMake (`FetchContent`), nothing to install by hand:
 
-- **Eigen 3.4** — least-squares regression in Longstaff-Schwartz
-- **Catch2 v3** — test framework
+- **Eigen 3.4** — least-squares regression in Longstaff-Schwartz (fetched as a
+  pinned source tarball)
+- **Catch2 v3** — test framework (fetched via a shallow git clone of the `v3.5.4`
+  tag, so the first configure needs network access to GitHub)
 
 Standard-library only otherwise: `std::mt19937_64` + `std::normal_distribution`
 for the RNG, `std::thread` for parallel path generation.

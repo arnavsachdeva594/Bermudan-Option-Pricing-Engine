@@ -37,7 +37,7 @@ FetchContent_MakeAvailable(Catch2)
 # Header-only for now (payoff/params). Concrete .cpp pricers get added to
 # PRICER_SOURCES as later stages land, turning this into a compiled library.
 set(PRICER_SOURCES
-    # src/blackscholes.cpp   # stage 2
+    src/blackscholes.cpp     # stage 2
     # src/binomial.cpp       # stage 3
     # src/lsm.cpp            # stage 4
     # src/greeks.cpp         # stage 6
@@ -66,6 +66,8 @@ include(Catch)
 
 add_executable(unit_tests
     tests/test_payoff.cpp
+    tests/test_blackscholes.cpp
+    tests/test_gbm.cpp
 )
 target_link_libraries(unit_tests PRIVATE pricer Catch2::Catch2WithMain)
 catch_discover_tests(unit_tests)
