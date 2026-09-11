@@ -59,6 +59,10 @@ else()
     target_link_libraries(pricer INTERFACE Eigen3::Eigen)
 endif()
 
+# ---- Benchmark harness --------------------------------------------------
+add_executable(benchmark src/benchmark.cpp)
+target_link_libraries(benchmark PRIVATE pricer)
+
 # ---- Tests --------------------------------------------------------------
 enable_testing()
 include(CTest)

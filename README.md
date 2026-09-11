@@ -7,7 +7,20 @@ binomial tree and the Black-Scholes closed form. Variance reduction (antithetic
 pairs + a European control variate) and multithreaded path generation are layered
 on top.
 
-> Status: built in stages. This README grows as stages land.
+## Features
+
+- **Longstaff-Schwartz LSM** with a pluggable regression basis (`{1,S,S²}`
+  polynomial or Laguerre), ITM-only regression, stable `householderQr` solve.
+- **Cross-validation**: Black-Scholes closed form (European) and a
+  Cox-Ross-Rubinstein tree (American) bracket the LSM price —
+  `European ≤ Bermudan ≤ American` is asserted in the tests.
+- **Variance reduction**: antithetic pairs (pair-aware standard error) and a
+  European control variate with empirically estimated optimal beta.
+- **Greeks**: delta and gamma by central finite difference under common random
+  numbers.
+- **Threaded path generation** that is deterministic *independent of core count*
+  (per-path seeding), proven by test.
+- **Benchmark harness** printing the SE / wall-time table below.
 
 ## Design at a glance
 
@@ -57,3 +70,50 @@ ctest --test-dir build         # runs the suite
 ```
 
 Requires a C++17 compiler and CMake >= 3.20.
+
+## Benchmarks
+
+```sh
+./build/benchmark          # 1e3, 1e4, 1e5, 1e6 paths (default)
+./build/benchmark 5        # up to 1e5 paths
+./build/benchmark 4 7      # 1e4 .. 1e7 paths
+```
+
+The harness prices the spec Bermudan put (S0=K=100, r=5%, σ=20%, T=1, 50
+exercise dates) with each estimator and prints:
+
+```
+method                       paths       price     std error    se*sqrt(N)     wall (ms)
+```
+
+How to read it:
+
+- **`se*sqrt(N)` is ~constant down each method's column** — empirical
+  confirmation that `SE = c/√N` (halving the error costs 4× the paths).
+- **`std error` shrinks across methods at fixed N** — antithetic then control
+  variate cut the constant `c`.
+- **`price` stays inside `[European, American]`** for every row.
+
+Results (fill in from your own run — hardware dependent):
+
+| method                | paths | price | std error | se·√N | wall (ms) |
+|-----------------------|------:|------:|----------:|------:|----------:|
+| plain MC              |  10^3 |       |           |       |           |
+| antithetic            |  10^3 |       |           |       |           |
+| antithetic + control  |  10^3 |       |           |       |           |
+| plain MC              |  10^4 |       |           |       |           |
+| …                     |       |       |           |       |           |
+| antithetic + control  |  10^6 |       |           |       |           |
+
+## Stages
+
+The engine was built in the following order (each stage has its own tests):
+
+1. CMake skeleton + payoff/parameter types
+2. GBM path generator + Black-Scholes closed form
+3. Cox-Ross-Rubinstein binomial tree
+4. Longstaff-Schwartz core
+5. Antithetic + control variate
+6. Greeks (delta, gamma) by finite difference
+7. Threaded, deterministic path generation
+8. Benchmark harness
