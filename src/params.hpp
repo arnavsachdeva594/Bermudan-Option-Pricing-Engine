@@ -26,9 +26,10 @@ struct MarketParams {
 // compute for accuracy. Kept separate from MarketParams so the contract can be
 // held fixed while sweeping simulation effort (see the benchmark harness).
 struct MCConfig {
-    std::size_t   num_paths = 100'000;  // number of simulated GBM paths
-    std::size_t   num_steps = 50;       // time steps == Bermudan exercise dates
-    std::uint64_t seed      = 12345ULL; // master seed: makes every run reproducible
+    std::size_t   num_paths   = 100'000;  // number of simulated GBM paths
+    std::size_t   num_steps   = 50;       // time steps == Bermudan exercise dates
+    std::uint64_t seed        = 12345ULL; // master seed: makes every run reproducible
+    unsigned      num_threads = 0;        // path-gen threads; 0 = hardware_concurrency
 };
 
 }  // namespace pricer

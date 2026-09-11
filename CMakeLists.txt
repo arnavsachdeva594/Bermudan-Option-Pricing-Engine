@@ -72,6 +72,7 @@ add_executable(unit_tests
     tests/test_lsm.cpp
     tests/test_variance_reduction.cpp
     tests/test_greeks.cpp
+    tests/test_threading.cpp
 )
 target_link_libraries(unit_tests PRIVATE pricer Catch2::Catch2WithMain)
 catch_discover_tests(unit_tests)
