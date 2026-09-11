@@ -39,7 +39,7 @@ FetchContent_MakeAvailable(Catch2)
 set(PRICER_SOURCES
     src/blackscholes.cpp     # stage 2
     src/binomial.cpp         # stage 3
-    # src/lsm.cpp            # stage 4
+    src/lsm.cpp              # stage 4
     # src/greeks.cpp         # stage 6
 )
 
@@ -69,6 +69,7 @@ add_executable(unit_tests
     tests/test_blackscholes.cpp
     tests/test_gbm.cpp
     tests/test_binomial.cpp
+    tests/test_lsm.cpp
 )
 target_link_libraries(unit_tests PRIVATE pricer Catch2::Catch2WithMain)
 catch_discover_tests(unit_tests)
